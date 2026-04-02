@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: eternal-return-logbot
+    runtime: python
+    plan: starter
+    region: singapore
+    buildCommand: pip install -r requirements.txt
+    startCommand: python slack_bot.py
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.3
+      - key: OPENAI_MODEL
+        value: gpt-5-mini
+      - key: SLACK_ANALYSIS_MODE
+        value: direct
+      - key: SLACK_BOT_HOST
+        value: 0.0.0.0
+      - key: SLACK_BOT_TOKEN
+        sync: false
+      - key: SLACK_SIGNING_SECRET
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
