@@ -2,7 +2,7 @@ services:
   - type: web
     name: eternal-return-logbot
     runtime: python
-    plan: starter
+    plan: free
     region: singapore
     buildCommand: pip install -r requirements.txt
     startCommand: python slack_bot.py
