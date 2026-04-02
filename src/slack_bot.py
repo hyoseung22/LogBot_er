@@ -324,6 +324,8 @@ def _build_user_visible_error_message(exc: Exception, event: dict[str, object]) 
                 "봇을 재시작해 주세요."
             )
 
+    if isinstance(exc, RuntimeError) and str(exc) == "OPENAI_API_KEY is missing.":
+        return "Render 환경변수에 `OPENAI_API_KEY`가 없습니다. Render Dashboard의 Environment에서 키를 넣고 재배포해 주세요."
     if isinstance(exc, RuntimeError) and str(exc) == "AI analysis request failed.":
         return "AI 분석 호출에 실패했습니다. 분석 서버 연결과 `OPENAI_API_KEY` 설정을 확인해 주세요."
     if isinstance(exc, RuntimeError) and str(exc) == "AI-only mode requires direct or server analysis mode.":
@@ -370,6 +372,8 @@ def _run_analysis_for_text(file_name: str, decoded_text: str, used_encoding: str
     mode = _analysis_mode()
     analysis: str | None = None
     if mode == "direct":
+        if not os.getenv("OPENAI_API_KEY"):
+            raise RuntimeError("OPENAI_API_KEY is missing.")
         analysis = request_direct_ai_comment(snapshot, blocks, None)
     elif mode == "server":
         analysis = request_server_ai_comment(
@@ -382,6 +386,12 @@ def _run_analysis_for_text(file_name: str, decoded_text: str, used_encoding: str
         raise RuntimeError("AI-only mode requires direct or server analysis mode.")
 
     if not analysis:
+        _log(
+            "AI analysis request failed "
+            f"mode={mode} "
+            f"api_key_present={bool(os.getenv('OPENAI_API_KEY'))} "
+            f"model={os.getenv('OPENAI_MODEL') or 'gpt-5-mini'}"
+        )
         raise RuntimeError("AI analysis request failed.")
     return analysis.strip()
 
@@ -516,6 +526,8 @@ class SlackEventHandler(BaseHTTPRequestHandler):
             {
                 "status": "ok",
                 "mode": _analysis_mode(),
+                "ai_key_present": bool(os.getenv("OPENAI_API_KEY")),
+                "openai_model": os.getenv("OPENAI_MODEL") or "gpt-5-mini",
                 "allowed_channels": sorted(_allowed_channels()),
             }
         )

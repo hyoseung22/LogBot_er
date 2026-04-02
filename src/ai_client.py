@@ -10,6 +10,10 @@ from .heuristics import AnalysisResult
 from .log_parser import ErrorBlock, LogSnapshot
 
 
+def _debug_log(message: str) -> None:
+    print(f"[ai_client] {message}", flush=True)
+
+
 def _build_block_excerpt(block: ErrorBlock) -> str:
     preview = block.trigger_line.strip() or block.text.strip().splitlines()[0]
     preview = preview.replace("|", "/")
@@ -96,6 +100,7 @@ def _extract_texts(body: dict[str, object]) -> str | None:
 def _request_openai_responses(prompt: str) -> str | None:
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
+        _debug_log("OPENAI_API_KEY is missing.")
         return None
 
     model = os.getenv("OPENAI_MODEL") or "gpt-5-mini"
@@ -123,7 +128,24 @@ def _request_openai_responses(prompt: str) -> str | None:
     try:
         with urllib.request.urlopen(request, timeout=40) as response:
             body = json.loads(response.read().decode("utf-8"))
-    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError):
+    except urllib.error.HTTPError as exc:
+        try:
+            error_body = exc.read().decode("utf-8", errors="replace")[:500]
+        except OSError:
+            error_body = ""
+        _debug_log(
+            f"OpenAI HTTP error status={exc.code} reason={exc.reason!s} "
+            f"model={model} body={error_body}"
+        )
+        return None
+    except urllib.error.URLError as exc:
+        _debug_log(f"OpenAI URL error model={model} reason={exc.reason!s}")
+        return None
+    except TimeoutError:
+        _debug_log(f"OpenAI request timed out model={model}")
+        return None
+    except json.JSONDecodeError:
+        _debug_log(f"OpenAI response JSON decode failed model={model}")
         return None
 
     return _extract_texts(body)
@@ -155,7 +177,24 @@ def request_server_ai_comment(
     try:
         with urllib.request.urlopen(request, timeout=40) as response:
             body = json.loads(response.read().decode("utf-8"))
-    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError):
+    except urllib.error.HTTPError as exc:
+        try:
+            error_body = exc.read().decode("utf-8", errors="replace")[:500]
+        except OSError:
+            error_body = ""
+        _debug_log(
+            f"Analysis server HTTP error status={exc.code} reason={exc.reason!s} "
+            f"url={base_url}/analyze-log body={error_body}"
+        )
+        return None
+    except urllib.error.URLError as exc:
+        _debug_log(f"Analysis server URL error url={base_url}/analyze-log reason={exc.reason!s}")
+        return None
+    except TimeoutError:
+        _debug_log(f"Analysis server request timed out url={base_url}/analyze-log")
+        return None
+    except json.JSONDecodeError:
+        _debug_log(f"Analysis server response JSON decode failed url={base_url}/analyze-log")
         return None
 
     comment = body.get("analysis")
