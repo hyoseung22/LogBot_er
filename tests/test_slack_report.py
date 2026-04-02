@@ -31,6 +31,63 @@ class SlackReportTests(unittest.TestCase):
         self.assertEqual(report.issues[0].occurrences, 3)
         self.assertIn("Service Temporarily Unavailable", report.issues[0].representative_message())
 
+    def test_build_report_groups_messagepack_deserialization_errors(self) -> None:
+        lines = [
+            "MessagePackSerializationException: Unexpected msgpack code 145 (fixarray) encountered.",
+            "Rethrow as MessagePackSerializationException: Failed to deserialize Blis.Common.CmdKill value.",
+            "Rethrow as MessagePackSerializationException: Failed to deserialize Blis.Common.CmdUpdateMoveSpeed value.",
+        ]
+        snapshot = build_log_snapshot_from_text(
+            path_label="player.log",
+            decoded_text="\n".join(lines),
+            used_encoding="utf-8",
+            recent_line_count=0,
+        )
+
+        report = build_slack_log_report(snapshot)
+
+        self.assertEqual(len(report.issues), 1)
+        self.assertEqual(report.issues[0].title, "네트워크 동기화 데이터 해석 실패")
+        self.assertEqual(report.issues[0].occurrences, 3)
+        self.assertIn("Failed to deserialize Blis.Common", report.issues[0].representative_message())
+
+    def test_build_report_groups_object_sync_errors(self) -> None:
+        lines = [
+            "[ERROR][DEV][11:43:26.445][1][GameClient:HandleCommand:1108] Failed to find object by ObjectId[3396] ObjectType[Blis.Client.LocalMonster]",
+            "[ERROR][DEV][11:54:19.084][1][LocalWorld:CreateObject:131] ResourceItemBox ObjectId[1108] is duplicated.",
+            "[ERROR][DEV][11:54:19.084][1][LocalProjectilePoolService:ReturnPool:103] [LocalProjectilePoolService.ReturnPool] no key : 1857",
+        ]
+        snapshot = build_log_snapshot_from_text(
+            path_label="player.log",
+            decoded_text="\n".join(lines),
+            used_encoding="utf-8",
+            recent_line_count=0,
+        )
+
+        report = build_slack_log_report(snapshot)
+
+        self.assertEqual(len(report.issues), 1)
+        self.assertEqual(report.issues[0].title, "오브젝트 동기화 누락 또는 중복 생성")
+        self.assertEqual(report.issues[0].occurrences, 3)
+
+    def test_handle_command_wrapper_is_treated_as_noise(self) -> None:
+        lines = [
+            "[ERROR][DEV][11:43:26.713][1][GameClient:HandleCommand:1107] Exception occurred while HandleCommand: CmdFinishSkill",
+            "NullReferenceException: Object reference not set to an instance of an object.",
+        ]
+        snapshot = build_log_snapshot_from_text(
+            path_label="player.log",
+            decoded_text="\n".join(lines),
+            used_encoding="utf-8",
+            recent_line_count=0,
+        )
+
+        report = build_slack_log_report(snapshot)
+
+        self.assertEqual(len(report.issues), 1)
+        self.assertEqual(report.issues[0].title, "클라이언트 내부 참조 오류")
+        self.assertEqual(report.issues[0].occurrences, 1)
+
     def test_format_report_hides_warning_section_when_errors_exist(self) -> None:
         lines = [
             "NullReferenceException: Object reference not set to an instance of an object.",

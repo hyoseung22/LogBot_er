@@ -9,6 +9,7 @@ from typing import Iterable
 
 ERROR_PATTERN = re.compile(
     r"\[ERROR\]|\bException\b|NullReferenceException|JsonReaderException|"
+    r"MessagePackSerializationException|CommandQueueOverflowException|"
     r"\bFailed\b|\bCrash\b|\bUnhandled\b|\bdisconnect(?:ed|ion)?\b|"
     r"\bSocketException\b|\btimeout\b(?!:\s*0\b)|timed out|"
     r"\bD3D\b|\bGPU\b|Uploading Crash Report|LogError",

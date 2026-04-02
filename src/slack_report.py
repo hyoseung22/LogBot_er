@@ -23,6 +23,7 @@ NOISE_PATTERNS = [
     re.compile(r"^Sentry\.", re.IGNORECASE),
     re.compile(r"^Sentry:", re.IGNORECASE),
     re.compile(r"^Blis\.Common\.", re.IGNORECASE),
+    re.compile(r"Exception occurred while HandleCommand:", re.IGNORECASE),
     re.compile(r"DiagnosticLoggerExtensions", re.IGNORECASE),
     re.compile(r"^Uploading Crash Report$", re.IGNORECASE),
     re.compile(r"^BestHTTP\.SocketIO\.Socket:BestHTTP\.SocketIO\.ISocket\.Disconnect", re.IGNORECASE),
@@ -163,6 +164,89 @@ ISSUE_RULES = [
             re.compile(r"device removed", re.IGNORECASE),
         ),
     ),
+    IssueRule(
+        key="messagepack_deserialization_failure",
+        title="네트워크 동기화 데이터 해석 실패",
+        impact="서버에서 받은 실시간 전투/오브젝트 데이터를 해석하지 못해 전투 동기화가 어긋났을 가능성이 큽니다.",
+        cause="클라이언트와 서버의 프로토콜 버전 또는 데이터 형식이 맞지 않아 역직렬화에 실패한 것으로 보입니다.",
+        patterns=(
+            re.compile(r"MessagePackSerializationException", re.IGNORECASE),
+            re.compile(r"Failed to deserialize Blis\.Common\.", re.IGNORECASE),
+            re.compile(r"Unexpected msgpack code", re.IGNORECASE),
+        ),
+        representative_patterns=(
+            re.compile(r"Failed to deserialize Blis\.Common\.", re.IGNORECASE),
+            re.compile(r"MessagePackSerializationException", re.IGNORECASE),
+        ),
+    ),
+    IssueRule(
+        key="object_sync_failure",
+        title="오브젝트 동기화 누락 또는 중복 생성",
+        impact="게임 월드 오브젝트를 찾지 못하거나 중복 생성해 전투 상태가 어긋났을 가능성이 큽니다.",
+        cause="서버에서 전달된 오브젝트 상태와 클라이언트 로컬 월드 상태가 맞지 않아 동기화가 깨진 것으로 보입니다.",
+        patterns=(
+            re.compile(r"Failed to find object by ObjectId", re.IGNORECASE),
+            re.compile(r"ObjectId\[\d+\] is duplicated", re.IGNORECASE),
+            re.compile(r"LocalProjectilePoolService:ReturnPool", re.IGNORECASE),
+            re.compile(r"\bno key\s*:", re.IGNORECASE),
+        ),
+        representative_patterns=(
+            re.compile(r"Failed to find object by ObjectId", re.IGNORECASE),
+            re.compile(r"is duplicated", re.IGNORECASE),
+            re.compile(r"no key\s*:", re.IGNORECASE),
+        ),
+    ),
+    IssueRule(
+        key="game_data_mismatch",
+        title="클라이언트 데이터 정의 불일치",
+        impact="상태값, Enum, 스킬 데이터 같은 로컬 정의가 실제 데이터와 맞지 않아 일부 기능이 잘못 동작했을 수 있습니다.",
+        cause="클라이언트 데이터 테이블, Enum 정의, 또는 리소스 버전이 현재 서버/빌드와 맞지 않는 것으로 보입니다.",
+        patterns=(
+            re.compile(r"StateType parsing error", re.IGNORECASE),
+            re.compile(r"Invalid Data \[", re.IGNORECASE),
+            re.compile(r"No SkillGroupData", re.IGNORECASE),
+            re.compile(r"Could not convert string to boolean", re.IGNORECASE),
+            re.compile(r"CharacterStateGroup", re.IGNORECASE),
+        ),
+        representative_patterns=(
+            re.compile(r"StateType parsing error", re.IGNORECASE),
+            re.compile(r"Invalid Data \[", re.IGNORECASE),
+            re.compile(r"No SkillGroupData", re.IGNORECASE),
+        ),
+    ),
+    IssueRule(
+        key="command_queue_overflow",
+        title="명령 처리 큐 과부하",
+        impact="클라이언트가 받아야 할 명령을 제때 처리하지 못해 누적 지연이나 전투 상태 밀림이 발생했을 가능성이 큽니다.",
+        cause="짧은 시간에 명령이 과도하게 몰렸거나, 이전 동기화 오류로 큐가 비정상적으로 쌓인 것으로 보입니다.",
+        patterns=(
+            re.compile(r"CommandQueueOverflowException", re.IGNORECASE),
+            re.compile(r"서버와 통신중 오류", re.IGNORECASE),
+        ),
+        representative_patterns=(re.compile(r"CommandQueueOverflowException", re.IGNORECASE),),
+    ),
+    IssueRule(
+        key="memory_allocation_pressure",
+        title="메모리 할당 압박 또는 누수 징후",
+        impact="메모리 할당 실패가 누적돼 성능 저하나 비정상 종료로 이어졌을 가능성이 큽니다.",
+        cause="특정 구간에서 메모리 사용량이 급증하거나 해제가 지연돼 allocator가 압박을 받은 것으로 보입니다.",
+        patterns=(
+            re.compile(r"Failed Allocations\. Bucket layout", re.IGNORECASE),
+            re.compile(r"Failed count:", re.IGNORECASE),
+        ),
+        representative_patterns=(re.compile(r"Failed Allocations\. Bucket layout", re.IGNORECASE),),
+    ),
+    IssueRule(
+        key="matching_state_failure",
+        title="매칭 진입 상태 불일치",
+        impact="매칭 또는 큐 진입 요청이 현재 계정 상태와 맞지 않아 매칭 시작에 실패한 것으로 보입니다.",
+        cause="로비 상태가 아니거나 이전 세션 상태가 정리되지 않아 매칭 요청 조건을 충족하지 못한 것으로 보입니다.",
+        patterns=(
+            re.compile(r"CANNOT_MATCHING_NOT_IN_LOBBY_STATUS", re.IGNORECASE),
+            re.compile(r"Failed RestMatchingEnterCustomRequest", re.IGNORECASE),
+        ),
+        representative_patterns=(re.compile(r"CANNOT_MATCHING_NOT_IN_LOBBY_STATUS", re.IGNORECASE),),
+    ),
 ]
 
 
@@ -217,13 +301,13 @@ def _build_generic_issue(message: str) -> tuple[str, str, str]:
     if "exception" in lowered:
         return (
             "기타 예외 발생",
-            "명시적인 예외가 기록됐지만, 현재 규칙으로는 세부 분류가 어렵습니다.",
+            "명시적인 예외가 기록됐지만 현재 규칙으로는 세부 분류가 어렵습니다.",
             "대표 예외 문장과 직전 동작을 함께 확인해야 정확한 원인 판단이 가능합니다.",
         )
     return (
         "기타 오류 발생",
         "오류 로그는 확인됐지만 대표 패턴으로 묶이지 않는 항목입니다.",
-        "동일 시점의 전후 로그를 함께 봐야 원인 판단이 가능합니다.",
+        "같은 시점의 전후 로그를 함께 봐야 원인 판단이 가능합니다.",
     )
 
 

@@ -10,6 +10,9 @@ runtime-tmp/
 release-package/
 data/
 tools/
+!tools/
+tools/*
+!tools/scan_log_rules.py
 
 run-slack-out.txt
 run-slack-err.txt
