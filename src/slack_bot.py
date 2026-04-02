@@ -15,13 +15,12 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from .ai_client import request_direct_ai_comment, request_server_ai_comment
 from .log_parser import (
     PRIMARY_ENCODINGS,
     build_log_snapshot_from_text,
-    extract_error_blocks,
     mask_sensitive_text,
 )
+from .slack_report import build_slack_log_report, format_slack_log_report
 
 
 _PROCESSED_EVENTS_LOCK = threading.Lock()
@@ -346,12 +345,11 @@ def _build_result_message(result_text: str) -> str:
 
 
 def _run_analysis_for_text(file_name: str, decoded_text: str, used_encoding: str) -> str:
-    recent_line_count = int(os.getenv("SLACK_RECENT_LINE_COUNT", "3000"))
     snapshot = build_log_snapshot_from_text(
         path_label=file_name,
         decoded_text=decoded_text,
         used_encoding=used_encoding,
-        recent_line_count=recent_line_count,
+        recent_line_count=0,
     )
     if os.getenv("SLACK_MASK_SENSITIVE", "1") != "0":
         masked_full = mask_sensitive_text(snapshot.full_text)
@@ -359,41 +357,10 @@ def _run_analysis_for_text(file_name: str, decoded_text: str, used_encoding: str
             path_label=snapshot.path,
             decoded_text=masked_full,
             used_encoding=snapshot.used_encoding,
-            recent_line_count=recent_line_count,
+            recent_line_count=0,
         )
-
-    blocks = extract_error_blocks(snapshot.lines)
-    if len(blocks) <= 1 and snapshot.total_lines > snapshot.loaded_lines:
-        blocks = extract_error_blocks(snapshot.full_lines)
-
-    if not blocks:
-        return _build_no_error_message()
-
-    mode = _analysis_mode()
-    analysis: str | None = None
-    if mode == "direct":
-        if not os.getenv("OPENAI_API_KEY"):
-            raise RuntimeError("OPENAI_API_KEY is missing.")
-        analysis = request_direct_ai_comment(snapshot, blocks, None)
-    elif mode == "server":
-        analysis = request_server_ai_comment(
-            os.getenv("SLACK_ANALYSIS_SERVER_URL", "http://127.0.0.1:8765"),
-            snapshot,
-            blocks,
-            None,
-        )
-    else:
-        raise RuntimeError("AI-only mode requires direct or server analysis mode.")
-
-    if not analysis:
-        _log(
-            "AI analysis request failed "
-            f"mode={mode} "
-            f"api_key_present={bool(os.getenv('OPENAI_API_KEY'))} "
-            f"model={os.getenv('OPENAI_MODEL') or 'gpt-5-mini'}"
-        )
-        raise RuntimeError("AI analysis request failed.")
-    return analysis.strip()
+    report = build_slack_log_report(snapshot)
+    return format_slack_log_report(report)
 
 
 def _find_supported_file_in_messages(
