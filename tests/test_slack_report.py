@@ -10,11 +10,13 @@ from src.slack_report import build_slack_log_report, format_slack_log_report
 
 
 class SlackReportTests(unittest.TestCase):
-    def test_build_report_groups_errors_from_entire_file(self) -> None:
-        lines = [f"info line {index}" for index in range(1, 3501)]
-        lines.append("NullReferenceException: Object reference not set to an instance of an object")
-        lines.append("continuation")
-        lines.append("NullReferenceException: Object reference not set to an instance of an object")
+    def test_build_report_groups_related_http_failures(self) -> None:
+        lines = [
+            "[ERROR][Dev][2026-04-02 15:28:56,996][1][ErHttpRequest:RequestCoroutine:236] Fail Request: One or more errors occurred. (Service Temporarily Unavailable)",
+            "[ERROR][Dev][2026-04-02 15:28:56,997][1][ErHttpRequest:OnFailed:475] HandledError: False",
+            "[ERROR][Dev][2026-04-02 15:28:56,997][1][ErHttpRequest:OnFailed:486] Result State: Finished | Message:",
+            "UnityEngine.Debug:LogError(Object)",
+        ]
         snapshot = build_log_snapshot_from_text(
             path_label="player.log",
             decoded_text="\n".join(lines),
@@ -24,17 +26,14 @@ class SlackReportTests(unittest.TestCase):
 
         report = build_slack_log_report(snapshot)
 
-        self.assertEqual(report.total_lines, 3503)
-        self.assertEqual(len(report.summary_lines), 3)
-        self.assertEqual(len(report.error_entries), 1)
-        self.assertEqual(report.error_entries[0].occurrences, 2)
-        self.assertEqual(report.error_entries[0].line_numbers, [3501, 3503])
+        self.assertEqual(len(report.issues), 1)
+        self.assertEqual(report.issues[0].title, "서버 API 응답 실패")
+        self.assertEqual(report.issues[0].occurrences, 3)
+        self.assertIn("Service Temporarily Unavailable", report.issues[0].representative_message())
 
-    def test_format_report_includes_full_sentence_counts_and_anomalies(self) -> None:
+    def test_format_report_hides_warning_section_when_errors_exist(self) -> None:
         lines = [
-            "startup ok",
-            "JsonReaderException: Error parsing Infinity value. Path 'banner.value'",
-            "[WARN] Retry connecting to gateway",
+            "NullReferenceException: Object reference not set to an instance of an object.",
             "[WARN] Retry connecting to gateway",
         ]
         snapshot = build_log_snapshot_from_text(
@@ -46,24 +45,27 @@ class SlackReportTests(unittest.TestCase):
 
         result = format_slack_log_report(build_slack_log_report(snapshot))
 
-        self.assertIn("[3줄 요약]", result)
-        self.assertIn("발생 1회", result)
-        self.assertIn("발생 2회", result)
-        self.assertIn("원문: JsonReaderException: Error parsing Infinity value. Path 'banner.value'", result)
-        self.assertIn("원문: [WARN] Retry connecting to gateway", result)
+        self.assertIn("[핵심 요약]", result)
+        self.assertIn("[주요 오류]", result)
+        self.assertNotIn("[참고 특이사항]", result)
+        self.assertNotIn("Retry connecting to gateway", result)
 
-    def test_run_analysis_scans_beyond_previous_recent_line_limit(self) -> None:
+    def test_run_analysis_scans_entire_file_and_summarizes_by_issue(self) -> None:
         lines = [f"heartbeat {index}" for index in range(1, 3201)]
-        lines.append("SocketException: Connection timed out while waiting for match server")
+        lines.append(
+            "[ERROR][Dev][2026-04-02 15:28:56,996][1][ErHttpRequest:RequestCoroutine:236] Fail Request: One or more errors occurred. (Service Temporarily Unavailable)"
+        )
+        lines.append("NullReferenceException: Object reference not set to an instance of an object.")
 
         with patch.dict(os.environ, {"SLACK_MASK_SENSITIVE": "0"}, clear=False):
             result = slack_bot._run_analysis_for_text("player.log", "\n".join(lines), "utf-8")
 
-        self.assertIn("전체 검수 라인: 3,201", result)
-        self.assertIn("SocketException: Connection timed out while waiting for match server", result)
-        self.assertIn("발생 1회", result)
+        self.assertIn("전체 검수 라인: 3,202", result)
+        self.assertIn("서버 API 응답 실패", result)
+        self.assertIn("클라이언트 내부 참조 오류", result)
+        self.assertIn("- 위치: 3,201줄", result)
 
-    def test_run_analysis_reports_special_notes_when_no_errors(self) -> None:
+    def test_no_error_report_includes_compact_special_notes(self) -> None:
         lines = [
             "startup ok",
             "[WARN] Retry connecting to gateway",
@@ -74,8 +76,8 @@ class SlackReportTests(unittest.TestCase):
         with patch.dict(os.environ, {"SLACK_MASK_SENSITIVE": "0"}, clear=False):
             result = slack_bot._run_analysis_for_text("player.log", "\n".join(lines), "utf-8")
 
-        self.assertIn("명시적인 오류 구문은 확인되지 않았습니다.", result)
-        self.assertIn("[특이사항]", result)
+        self.assertIn("명시적인 error/exception 구문은 확인되지 않았습니다.", result)
+        self.assertIn("[참고 특이사항]", result)
         self.assertIn("Retry connecting to gateway", result)
 
 
